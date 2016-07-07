@@ -1,3 +1,4 @@
+from utils import *
 import copy
 
 
@@ -97,7 +98,7 @@ class Process:
         self.method_container = dict()
         # CARE! HardCoded lookup table here.
         # TODO: read stuff from config
-        self.method_lookup_table = dict()
+        self.method_lookup_table = read_key_value_config('Processes', 'internal_lookup_table')
 
     def add_method(self, name):
         self.method_container[name] = Method(name)

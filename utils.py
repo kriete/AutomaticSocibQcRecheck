@@ -1,6 +1,7 @@
 from urllib2 import Request, urlopen, URLError
 from lxml import html
 from netCDF4 import Dataset
+import ConfigParser
 import logging
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
@@ -9,6 +10,10 @@ handler.setLevel(logging.INFO)
 formatter = logging.Formatter('%(asctime)s p%(process)s {%(pathname)s:%(lineno)d} - %(name)s - %(levelname)s - %(message)s')
 handler.setFormatter(formatter)
 logger.addHandler(handler)
+
+
+def find_all_instances(s, ch):
+    return [i for i, ltr in enumerate(s) if ltr == ch]
 
 
 def get_mooring_stations(base_url, year, month):
@@ -85,8 +90,24 @@ def get_mooring_stations(base_url, year, month):
     return URLBuilder
 
 
-def read_key_value_config():
-    pass
+def read_key_value_config(section, variable):
+    config_handler = ConfigParser.ConfigParser()
+    config_handler.read('/home/akrietemeyer/workspace/qc_comparison/config.ini')
+    out = dict()
+    if config_handler.has_section(section):
+        full = config_handler.get(section, variable)
+        idx = find_all_instances(full, ';')
+        start_counter = 0
+        for i in idx:
+            pair = full[start_counter:i]
+            comma_idx = find_all_instances(pair, ',')
+            key = pair[0:comma_idx[0]]
+            value = pair[comma_idx[0]+1::]
+            out[key] = value.strip()
+            start_counter = i + 1
+    else:
+        logger.warning('Specified section ' + section + ' not found in config.ini.')
+    return out
 
 
 def check_link_availability(link):

@@ -3,10 +3,10 @@ from netCDF4 import Dataset
 import logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+formatter = logging.Formatter('[%(asctime)s] p%(process)s %(lineno)d - %(name)s - %(levelname)s - %(message)s', '%m-%d %H:%M:%S')
+handler.setFormatter(formatter)
 handler = logging.FileHandler('station.log')
 handler.setLevel(logging.INFO)
-formatter = logging.Formatter('%(asctime)s p%(process)s {%(pathname)s:%(lineno)d} - %(name)s - %(levelname)s - %(message)s')
-handler.setFormatter(formatter)
 logger.addHandler(handler)
 
 
@@ -45,16 +45,26 @@ class StationManager:
         for station in self.station_container:
             cur_name = station.name
             if cur_name in axys_watchMate_meteo:
-                station.process_name = 'Axys_WatchMate_Meteo'
+                cur_process_name = 'Axys_WatchMate_Meteo'
+                station.process_name = cur_process_name
+                station.process_definitions = self.qc_definitions.processes[cur_process_name]
             elif cur_name in meteoStation_aanderaa:
-                station.process_name = 'MeteoStation_Aanderaa'
+                cur_process_name = 'MeteoStation_Aanderaa'
+                station.process_name = cur_process_name
+                station.process_definitions = self.qc_definitions.processes[cur_process_name]
             elif cur_name in meteoStation_vaisala:
-                station.process_name = 'MeteoStation_Vaisala'
+                cur_process_name = 'MeteoStation_Vaisala'
+                station.process_name = cur_process_name
+                station.process_definitions = self.qc_definitions.processes[cur_process_name]
             elif cur_name in meteoStation_vaisala_airp_mbar:
-                station.process_name = 'MeteoStation_Vaisala_Airp_Mbar'
+                cur_process_name = 'MeteoStation_Vaisala_Airp_Mbar'
+                station.process_name = cur_process_name
+                station.process_definitions = self.qc_definitions.processes[cur_process_name]
             else:
                 logger.warning('No Process defined for this station: ' + cur_name + '. Will use default now.')
-                station.process_name = 'MeteoStation_Vaisala_Airp_Mbar'
+                cur_process_name = 'MeteoStation_Vaisala_Airp_Mbar'
+                station.process_name = cur_process_name
+                station.process_definitions = self.qc_definitions.processes[cur_process_name]
 
 
 class Station:
@@ -70,3 +80,4 @@ class Station:
         logger.info('Station ' + self.name)
         logger.info('Provided by source link ' + self.link)
         logger.info('Has been assigned to the process ' + self.process_name)
+        logger.info('Has processes defined for the variables ' + str(self.process_definitions.method_container.keys()))
