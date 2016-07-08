@@ -9,7 +9,13 @@ Check also my other github repositories <a href="https://github.com/kriete/Scatt
 
 #Notes
 We use simple web scraping from the socib thredds server to obtain the opendap links to the desired weather station data.
+
 Also, we create a javascript callback to automatically adjust the y-axis according to the current zoom-extend.
+
+The QC thresholds/definitions are stored internally. No connection to the database is required nor implemented.
+
+The QC tests (range, spike, gradient, stationary) are implemented but need small adjustments like using prior good data etc. However, this shouldn't affect the overall scope of this protoype.
+
 !Please note that this repo has no setup! Entry point is the ProcessingManager.py!
 
 #Screenshot of interactive html output
