@@ -5,6 +5,8 @@ Needs still to be refined to use database access and picking good data only for 
 
 However, this is meant to be a prototype to show the usage of bokeh and to highlight potential problems with the socib  netCDF data sources.
 
+See the images or the interactive HTML output for an example.
+
 Check also my other github repositories <a href="https://github.com/kriete/ScatterBokeh">ScatterBokeh</a>, <a href="https://github.com/kriete/bokehAutomaticYRangeUpdate">bokehAutomaticYRangeUpdate</a> and <a href="https://github.com/kriete/PlotBokehLatestMoorings">PlotBokehLatestMoorings</a> for additional inspiration.
 
 #Notes
@@ -21,6 +23,12 @@ The QC tests (range, spike, gradient, stationary) are implemented but need small
 #Screenshot of interactive html output
 ![...](/img/overview.png?raw=true "HTML bokeh output")
 ![...](/img/zoomed.png?raw=true "HTML bokeh output")
+
+### HTML output:
+To go directly to the html output:<br>
+<a href="http://htmlpreview.github.io/?https://github.com/kriete/https://github.com/kriete/AutomaticSocibQcRecheck/2016_04_buoy_bahiadepalma-scb_met008.html">Rendered HTML</a><br>
+<a href="https://raw.githubusercontent.com/kriete/https://github.com/kriete/AutomaticSocibQcRecheck/2016_04_buoy_bahiadepalma-scb_met008.html">Raw HTML</a>
+
 
 #Dependencies
 <ul>
