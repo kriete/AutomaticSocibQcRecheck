@@ -34,7 +34,147 @@ def get_min_max_ranges(data):
     return cur_min, cur_max
 
 
-def get_bokeh_tab(conv_time, data, variable, conv_time_backward, qc_data=None, new_qc_data=None):
+def merge_arrays(invalid_idx, qc_flag, cur_qc_array):
+    flagable_idx = np.less(cur_qc_array, qc_flag)
+    flag_idx = np.logical_and(invalid_idx, flagable_idx)
+    cur_qc_array[flag_idx] = qc_flag
+    return cur_qc_array
+
+
+def compute_valid_range(data, valid_min, valid_max, qc_flag, cur_qc_array):
+    invalid_less = np.less(data, valid_min)
+    invalid_greater = np.greater(data, valid_max)
+    invalid_idx = np.logical_or(invalid_less, invalid_greater)
+    return merge_arrays(invalid_idx, qc_flag, cur_qc_array)
+
+
+def compute_stationary(data, cur_time, time_check_window, threshold, qc_flag, cur_qc_array):
+    time_interval = cur_time[1] - cur_time[0]
+    slicer = float(time_check_window) / time_interval*3600.
+    slicer = int(slicer)
+    start_idx = 0
+    end_idx = slicer
+    invalid_idx = np.zeros((1, len(cur_time)))[0]
+    for _ in range(slicer, len(cur_time)):
+        window_slice = data[start_idx:end_idx]
+        amount_nan = np.where(np.isnan(window_slice))[0]
+        percent_nan = float(len(amount_nan)) / len(window_slice) * 100.
+        if percent_nan >= 40:
+            continue
+        window_slice_min = np.nanmin(window_slice)
+        window_slice_max = np.nanmax(window_slice)
+        window_slice_difference = window_slice_max - window_slice_min
+        if window_slice_difference <= threshold:
+            invalid_idx[start_idx:end_idx] = True
+        start_idx += 1
+        end_idx += 1
+    return merge_arrays(invalid_idx, qc_flag, cur_qc_array)
+
+
+def compute_simple_gradient(data, threshold, qc_flag, cur_qc_array):
+    invalid_idx = np.zeros((1, len(data)))[0]
+    if (abs(data[0] - data[1])) > threshold:
+        invalid_idx[0] = True
+    for i in range(1, len(data)-1):
+        if (abs(data[i] - data[i+1] + data[i-1] - data[i])) > threshold:
+            invalid_idx[i] = True
+    if (abs(data[-2] - data[-1])) > threshold:
+        invalid_idx[-1] = True
+    return merge_arrays(invalid_idx, qc_flag, cur_qc_array)
+
+
+def compute_extended_gradient(data, cur_time, threshold, time_check_window, qc_flag, cur_qc_array):
+    invalid_idx = np.zeros((1, len(data)))[0]
+    time_interval = cur_time[1] - cur_time[0]
+    divide = time_check_window / float(time_interval)
+    if divide <= 1:
+        steps = 1
+    else:
+        steps = int(divide) + 1
+    # initial case start
+    v1 = data[0]
+    c1 = cur_time[0]
+    v2 = np.mean(data[1:1 + steps])
+    c2 = np.mean(cur_time[1:1 + steps])
+    check_value = abs((v1 - v2) / (c1 - c2))
+    if check_value >= threshold:
+        invalid_idx[0] = True
+    # initial case end
+
+    nan_list = np.where(np.isnan(data))[0]
+    run_through_interval = np.array(range(steps, len(cur_time) - steps, steps))
+
+    del_index_list = []
+    for n in nan_list:
+        if 0 < n < len(cur_time):
+            del_index_list.append(n - 1)
+
+    del_index_list = np.unique(del_index_list)
+    run_through_interval = np.delete(run_through_interval, del_index_list)
+
+    # intermediate case
+    for i in run_through_interval[1:]:
+        # change AK XXX 19.10.2015
+        # if range(i-steps, i) in nan_list or range(i+1, i+steps+1) in nan_list or i in nan_list:
+        #     logger.debug("nan value skip " + str(i))
+        #     continue
+        # ignore my_list entries (22.10.2015)
+        """
+        Require getting of good measurements before / after
+        """
+        #temp_ignore_list = np.full(len(cur_time), 1, dtype=np.int)
+        #good_measurements_time_before, good_measurements_values_before = \
+        #    self.get_good_measurement_before(var_name, temp_ignore_list, range(i - steps, i), 0)
+        #good_measurements_time_after, good_measurements_values_after = \
+        #    self.get_good_measurement_before(var_name, temp_ignore_list, range(i + 1, i + steps + 1), 1)
+
+        # if there are no more good measurements after, break the for loop
+        #if len(good_measurements_values_after) == 0:
+            # my_list[i] = flag
+        #    break
+
+        # c1 = np.mean(float(var[i-steps:i]))
+        # c1 = np.mean(float(np.array(good_measurements_time_before)))
+        # c1 = np.mean(float(np.array(data[i-steps:i])))
+        c1 = np.mean(float(np.array(cur_time[i-steps:i])))
+        c2 = float(cur_time[i])
+        # c3 = np.mean(float(self.time[i+1:i+steps+1]))
+        #c3 = np.mean(float(np.array(good_measurements_time_after)))
+        #c3 = np.mean(float(np.array(data[i+1:i+steps+1])))
+        c3 = np.mean(float(np.array(cur_time[i+1:i+steps+1])))
+
+        w1 = (c1 - c2) / (c1 - c3)
+
+        # w1 = c3 / c2
+        w2 = (c2 - c3) / (c1 - c3)
+        # w2 = c1 / c2
+
+        # v1 = np.mean(var[i-steps:i])
+        #v1 = np.mean(np.array(good_measurements_values_before))
+        v1 = np.mean(data[i-steps:i])
+        #v2 = var[i]
+        v2 = data[i]
+        # v3 = np.mean(var[i+1:i+steps+1])
+        #v3 = np.mean(np.array(good_measurements_values_after))
+        v3 = np.mean(data[i+1:i+steps+1])
+
+        check_value = abs(w1 * (v2 - v3) / ((c2 - c3) / 60) + w2 * (v1 - v2) / ((c1 - c2) / 60))
+        # change AK XXX 15.10.2015
+        # check_value = abs(w1 * (v2 - v3)/c1 + w2 * (v1 - v2)/c3)
+        if round(check_value, 10) >= threshold:
+            invalid_idx[i] = True
+    return merge_arrays(invalid_idx, qc_flag, cur_qc_array)
+
+def compute_spike(data, threshold, qc_flag, cur_qc_array):
+    invalid_idx = np.zeros((1, len(data)))[0]
+    for i in range(1, len(data)-1):
+        check_value = abs(data[i] - (data[i+1] + data[i-1]) / 2.) - abs((data[i+1] - data[i-1]) / 2.)
+        if check_value > threshold:
+            invalid_idx[i] = True
+    return merge_arrays(invalid_idx, qc_flag, cur_qc_array)
+
+
+def get_bokeh_tab(conv_time, data, variable, conv_time_backward, qc_data=None, new_qc_data=None, diff_idx=None):
     cur_min, cur_max = get_min_max_ranges(data)
     time_strings = map(get_str, conv_time)
     data_source = ColumnDataSource(
@@ -46,6 +186,8 @@ def get_bokeh_tab(conv_time, data, variable, conv_time_backward, qc_data=None, n
             imported_qc=qc_data,
         )
     )
+    zeros = np.zeros(len(diff_idx))
+    tens = zeros[:] + 10
     p = figure(plot_width=1200, plot_height=300, tools=["pan, xwheel_zoom, hover, reset"], x_axis_type="datetime",
                y_range=(cur_min, cur_max), y_axis_label=variable.units)
     p.line(conv_time, data, name="data", source=data_source)
@@ -75,6 +217,7 @@ def get_bokeh_tab(conv_time, data, variable, conv_time_backward, qc_data=None, n
             ('imported qc', '@imported_qc'),
 
         ])
+    p.segment(conv_time[diff_idx], zeros, conv_time[diff_idx], tens, line_width=0.5, color="red", y_range_name="foo")
     automatic_range_jscode = automatic_range_jscode_defintion()
     source = ColumnDataSource({'x': conv_time_backward, 'y': data})
     p.y_range.callback = CustomJS(args=dict(source=source, yrange=p.y_range, xrange=p.x_range), code=automatic_range_jscode)

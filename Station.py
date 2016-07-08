@@ -73,6 +73,7 @@ class StationManager:
 
     def process_stations(self):
         for station in self.station_container:
+            station.perform_qc()
             station.run_through_variables_of_interest()
 
 
@@ -95,6 +96,7 @@ class Station:
         self.variables_of_interest = []
         self.qc_variables_of_interest = []
         self.definitions_of_interest = dict()
+        self.qc_output = dict()
 
     def get_defined_variables_of_interest(self):
         for method_name, method_definition in self.process_definitions.method_container.items():
@@ -130,10 +132,52 @@ class Station:
             qc_variable = self.root[self.qc_variables_of_interest[variable_counter]]
             variable_data = get_data_array(variable)
             qc_variable_data = get_data_array(qc_variable)
-            new_qc_variable_data = np.asarray(np.ones((1, len(qc_variable_data)))[0])
+            # new_qc_variable_data = np.asarray(np.ones((1, len(qc_variable_data)))[0])
+            new_qc_variable_data = self.qc_output[variable_name]
+            difference_highlights_idx = np.where(qc_variable_data != new_qc_variable_data)[0]
+
             tab_holder.append(get_bokeh_tab(self.converted_time1, variable_data, variable,
                                             self.converted_time_backward, qc_data=qc_variable_data,
-                                            new_qc_data=new_qc_variable_data))
+                                            new_qc_data=new_qc_variable_data, diff_idx=difference_highlights_idx))
             variable_counter += 1
         plot_bokeh(tab_holder, self.name, self.year, self.month)
-        pass
+
+    def perform_qc(self):
+        for variable_name in self.variables_of_interest:
+            variable = self.root[variable_name]
+            variable_data = get_data_array(variable)
+            self.qc_output[variable_name] = np.ones((1, len(variable_data)))[0]
+            nan_idx = np.isnan(variable_data)
+            self.qc_output[variable_name][nan_idx] = 9
+            method_definitions = self.definitions_of_interest[variable_name].get_method_arrays()
+            cur_qc_methods = method_definitions[0]
+            cur_qc_input_parameters = method_definitions[1]
+            cur_qc_lookup = method_definitions[2]
+            if len(cur_qc_methods) != len(cur_qc_lookup):
+                logger.error("Incorrect amount of flags with respect to the QC methods set.")
+                return
+            qc_counter = 0
+            for qc_method in cur_qc_methods:
+                input_parameters = cur_qc_input_parameters[qc_counter]
+                if qc_method == 'range':
+                    if len(input_parameters) != 2:
+                        logger.error('Not enough input parameters.')
+                        continue
+                    self.qc_output[variable_name] = compute_valid_range(variable_data, input_parameters[0], input_parameters[1], cur_qc_lookup[qc_counter], self.qc_output[variable_name])
+                elif qc_method == 'spike':
+                    if len(input_parameters) != 1:
+                        logger.error('Not enough input parameters.')
+                        continue
+                    self.qc_output[variable_name] = compute_spike(variable_data, input_parameters[0], cur_qc_lookup[qc_counter], self.qc_output[variable_name])
+                elif qc_method == 'gradient':
+                    if len(input_parameters) != 2:
+                        logger.error('Not enough input parameters.')
+                        continue
+                    # self.qc_output[variable_name] = compute_simple_gradient(variable_data, input_parameters[1], cur_qc_lookup[qc_counter], self.qc_output[variable_name])
+                    self.qc_output[variable_name] = compute_extended_gradient(variable_data, self.time, input_parameters[1], input_parameters[0], cur_qc_lookup[qc_counter], self.qc_output[variable_name])
+                elif qc_method == 'stationary':
+                    if len(input_parameters) != 2:
+                        logger.error('Not enough input parameters.')
+                        continue
+                    self.qc_output[variable_name] = compute_stationary(variable_data, self.time, input_parameters[0], input_parameters[1], cur_qc_lookup[qc_counter], self.qc_output[variable_name])
+                qc_counter += 1
