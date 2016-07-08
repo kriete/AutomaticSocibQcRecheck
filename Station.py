@@ -13,10 +13,13 @@ logger.addHandler(handler)
 class StationManager:
     def __init__(self, year, month, qc_definitions):
         self.station_links = get_mooring_stations('http://thredds.socib.es/thredds/catalog/mooring/weather_station/catalog.html', year, month)
+        self.year = year
+        self.month = month
         self.qc_definitions = qc_definitions
         self.station_container = []
         self.create_stations()
         self.assign_qc_processes()
+        self.process_stations()
         self.print_station_information()
 
     def print_station_information(self):
@@ -28,7 +31,7 @@ class StationManager:
             if check_link_availability(link):
                 name = get_station_name_from_link('weather_station/', '/L1/', link)
                 logger.info('Found data for station ' + name)
-                self.station_container.append(Station(link, name))
+                self.station_container.append(Station(link, name, self.year, self.month))
             else:
                 logger.warning(link + ' does not exist. Will not use this station.')
 
@@ -39,9 +42,10 @@ class StationManager:
         # and I should have really avoided that)
         axys_watchMate_meteo = ['buoy_canaldeibiza-scb_met010', 'buoy_bahiadepalma-scb_met008']
         meteoStation_aanderaa = ['station_salines-ime_met002']
-        meteoStation_vaisala = ['mobims_sonbou-scb_met011', 'mobims_calamillor-scb_met001']
+        meteoStation_vaisala = ['mobims_calamillor-scb_met001']
         meteoStation_vaisala_airp_mbar = ['mobims_playadepalma-scb_met012', 'station_parcbit-scb_met004',
-                                          'station_galfi-scb_met005', 'station_esporles-scb_met003']
+                                          'station_galfi-scb_met005', 'station_esporles-scb_met003',
+                                          'mobims_sonbou-scb_met011']
         for station in self.station_container:
             cur_name = station.name
             if cur_name in axys_watchMate_meteo:
@@ -65,15 +69,42 @@ class StationManager:
                 cur_process_name = 'MeteoStation_Vaisala_Airp_Mbar'
                 station.process_name = cur_process_name
                 station.process_definitions = self.qc_definitions.processes[cur_process_name]
+            station.get_defined_variables_of_interest()
+
+    def process_stations(self):
+        for station in self.station_container:
+            station.run_through_variables_of_interest()
 
 
 class Station:
-    def __init__(self, link, name):
+    def __init__(self, link, name, year, month):
+        # TODO: fix converted_time1 plz
+        self.year = year
+        self.month = month
         self.link = link
         self.name = name
         self.root = Dataset(link)
+        self.time = get_data_array(self.root['time'])
+        self.converted_time = get_md_datenum(self.time)
+        date_converted = [datetime.fromtimestamp(ts) for ts in self.time]
+        self.converted_time1 = get_pandas_timestamp_series(date_converted)
+        translate_time = self.converted_time1.apply(lambda x: x.to_pydatetime())
+        self.converted_time_backward = map(totimestamp, translate_time)
         self.process_name = ''
-        self.process_definitions = dict()
+        self.process_definitions = None
+        self.variables_of_interest = []
+        self.qc_variables_of_interest = []
+        self.definitions_of_interest = dict()
+
+    def get_defined_variables_of_interest(self):
+        for method_name, method_definition in self.process_definitions.method_container.items():
+            var_name = method_definition.title
+            if not self.check_variable_existence(var_name):
+                continue
+            self.variables_of_interest.append(var_name)
+            self.definitions_of_interest[method_definition.title] = method_definition
+            qc_variable_name = self.root[var_name].ancillary_variables
+            self.qc_variables_of_interest.append(qc_variable_name)
 
     def log_station_information(self):
         logger.info('---')
@@ -81,3 +112,28 @@ class Station:
         logger.info('Provided by source link ' + self.link)
         logger.info('Has been assigned to the process ' + self.process_name)
         logger.info('Has processes defined for the variables ' + str(self.process_definitions.method_container.keys()))
+        logger.info('The definitions were connected with the variables ' + str(self.variables_of_interest))
+
+    def check_variable_existence(self, variable_name):
+        try:
+            self.root[variable_name]
+        except IndexError:
+            logger.warning('Variable of interest ' + variable_name + ' not found. Will pop it out.')
+            return False
+        return True
+
+    def run_through_variables_of_interest(self):
+        variable_counter = 0
+        tab_holder = []
+        for variable_name in self.variables_of_interest:
+            variable = self.root[variable_name]
+            qc_variable = self.root[self.qc_variables_of_interest[variable_counter]]
+            variable_data = get_data_array(variable)
+            qc_variable_data = get_data_array(qc_variable)
+            new_qc_variable_data = np.asarray(np.ones((1, len(qc_variable_data)))[0])
+            tab_holder.append(get_bokeh_tab(self.converted_time1, variable_data, variable,
+                                            self.converted_time_backward, qc_data=qc_variable_data,
+                                            new_qc_data=new_qc_variable_data))
+            variable_counter += 1
+        plot_bokeh(tab_holder, self.name, self.year, self.month)
+        pass
