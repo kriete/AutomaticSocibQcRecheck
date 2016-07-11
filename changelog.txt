@@ -8,3 +8,4 @@ Added possibility to use webgl for plotting (significantly faster rendering, but
 Removed toolbar from plots to prevent documented bug (11.07.) because of visual styling.
 Added some configuration loading functions.
 Tested with newest bokeh version (0.12).
+Added version tag v0.1.
