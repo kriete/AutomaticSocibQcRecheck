@@ -13,6 +13,8 @@ logger.addHandler(handler)
 class ProcessingManager:
     def __init__(self):
         qc_definitions = ProcessManager()
-        station_manager = StationManager(2016, 4, qc_definitions)
+        # Alternatively, insert manually here
+        # station_manager = StationManager(qc_definitions, 2016, 4)
+        station_manager = StationManager(qc_definitions)
 
 

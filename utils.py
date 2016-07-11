@@ -7,7 +7,8 @@ import numpy as np
 import matplotlib.dates as md
 from datetime import datetime
 import pytz
-from bokeh.io import output_file, show
+import os
+from bokeh.io import output_file, show, save
 from bokeh.plotting import figure, ColumnDataSource
 from bokeh.models import PanTool, Range1d, LinearAxis, CustomJS, HoverTool
 from bokeh.models.widgets import Panel, Tabs
@@ -165,6 +166,7 @@ def compute_extended_gradient(data, cur_time, threshold, time_check_window, qc_f
             invalid_idx[i] = True
     return merge_arrays(invalid_idx, qc_flag, cur_qc_array)
 
+
 def compute_spike(data, threshold, qc_flag, cur_qc_array):
     invalid_idx = np.zeros((1, len(data)))[0]
     for i in range(1, len(data)-1):
@@ -188,10 +190,18 @@ def get_bokeh_tab(conv_time, data, variable, conv_time_backward, qc_data=None, n
     )
     zeros = np.zeros(len(diff_idx))
     tens = zeros[:] + 10
+    use_webgl = read_value_config('General', 'use_webgl')
+    if use_webgl == 'True':
+        # Still a bit erroneous at points with missing data
+        use_webgl = True
+    else:
+        use_webgl = False
+    # We disable the toolbar_location since a confirmed visual bug causes a bit disturbing appearance
     p = figure(plot_width=1200, plot_height=300, tools=["pan, xwheel_zoom, hover, reset"], x_axis_type="datetime",
-               y_range=(cur_min, cur_max), y_axis_label=variable.units)
-    p.line(conv_time, data, name="data", source=data_source)
-    p.square(conv_time, data)
+               y_range=(cur_min, cur_max), y_axis_label=variable.units, toolbar_location=None, logo=None,
+               active_scroll='xwheel_zoom', webgl=use_webgl)
+    p.line(conv_time, data)
+    p.square(conv_time, data, name="data", source=data_source)
     if qc_data is not None:
         p.extra_y_ranges = {"foo": Range1d(start=0, end=10)}
 
@@ -217,6 +227,7 @@ def get_bokeh_tab(conv_time, data, variable, conv_time_backward, qc_data=None, n
             ('imported qc', '@imported_qc'),
 
         ])
+
     p.segment(conv_time[diff_idx], zeros, conv_time[diff_idx], tens, line_width=0.5, color="red", y_range_name="foo")
     automatic_range_jscode = automatic_range_jscode_defintion()
     source = ColumnDataSource({'x': conv_time_backward, 'y': data})
@@ -277,8 +288,9 @@ def get_str(x): return str(x)
 
 def plot_bokeh(tab_holder, filename, year, month):
     tabs = Tabs(tabs=tab_holder)
-    output_file('/home/akrietemeyer/workspace/qc_comparison/' + str(year) + '_' + str(month).zfill(2) + '_' + filename + '.html')
-    show(tabs)
+    base_dir = read_value_config('General', 'output_path')
+    output_file(base_dir + str(year) + '_' + str(month).zfill(2) + '_' + filename + '.html')
+    save(tabs)
 
 
 def totimestamp(dt, epoch=datetime(1970, 1, 1)):
@@ -312,9 +324,10 @@ def find_all_instances(s, ch):
     return [i for i, ltr in enumerate(s) if ltr == ch]
 
 
-def get_mooring_stations(base_url, year, month):
+def get_mooring_stations(base_url, year, month, only_single_stations=None):
     # Please note this was originally meant to be used for _latest datasets only. I adapted this to specify month and
     # year.
+    # Added single stations bypass.
     # TODO: refine to have a month selection here.
     # TODO: replace self -- haha very sacrificing
     # TODO: use logger instead of print s**t
@@ -344,6 +357,9 @@ def get_mooring_stations(base_url, year, month):
             url = "http://thredds.socib.es/thredds/catalog/mooring/weather_station/" + url_builder[n][0][
                                                                                        0:idx - 1] + "L1/catalog.html"
             name = url_builder[n][0][0:idx - 2]
+            if only_single_stations != [] and name not in only_single_stations:
+                logger.info('Skipping station ' + name + '. (Single station bypass).')
+                continue
             req = Request(url)
             try:
                 response = urlopen(req)
@@ -388,7 +404,7 @@ def get_mooring_stations(base_url, year, month):
 
 def read_key_value_config(section, variable):
     config_handler = ConfigParser.ConfigParser()
-    config_handler.read('/home/akrietemeyer/workspace/qc_comparison/config.ini')
+    config_handler.read(os.getcwd() + '/config.ini')
     out = dict()
     if config_handler.has_section(section):
         full = config_handler.get(section, variable)
@@ -404,6 +420,36 @@ def read_key_value_config(section, variable):
     else:
         logger.warning('Specified section ' + section + ' not found in config.ini.')
     return out
+
+
+def read_value_config(section, variable):
+    config_handler = ConfigParser.ConfigParser()
+    config_handler.read(os.getcwd() + '/config.ini')
+    if config_handler.has_section(section):
+        return config_handler.get(section, variable)
+    else:
+        logger.warning('Specified section ' + section + ' not found.')
+        return ''
+
+
+def read_year_month_config():
+    year = int(read_value_config('General', 'year'))
+    month = int(read_value_config('General', 'month'))
+    return year, month
+
+
+def read_single_stations_config():
+    single_stations = []
+    decision = read_value_config('General', 'use_only_single_stations')
+    if decision == 'True':
+        single_stations_strings = read_value_config('General', 'single_stations')
+        comma_idx = find_all_instances(single_stations_strings, ',')
+        start_idx = 0
+        for i in comma_idx:
+            single_stations.append(single_stations_strings[start_idx:i])
+            start_idx = i + 1
+        single_stations.append(single_stations_strings[start_idx+1::])
+    return single_stations
 
 
 def check_link_availability(link):

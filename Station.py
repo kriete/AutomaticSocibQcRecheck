@@ -11,8 +11,12 @@ logger.addHandler(handler)
 
 
 class StationManager:
-    def __init__(self, year, month, qc_definitions):
-        self.station_links = get_mooring_stations('http://thredds.socib.es/thredds/catalog/mooring/weather_station/catalog.html', year, month)
+    def __init__(self, qc_definitions, year=None, month=None, station_names=None):
+        if (year is None) or (month is None):
+            year, month = read_year_month_config()
+        if station_names is None:
+            single_stations = read_single_stations_config()
+        self.station_links = get_mooring_stations('http://thredds.socib.es/thredds/catalog/mooring/weather_station/catalog.html', year, month, only_single_stations=single_stations)
         self.year = year
         self.month = month
         self.qc_definitions = qc_definitions
@@ -73,8 +77,11 @@ class StationManager:
 
     def process_stations(self):
         for station in self.station_container:
+            logger.info('Processing station ' + station.name + '...')
             station.perform_qc()
+            logger.info('Plotting and saving station ' + station.name + '...')
             station.run_through_variables_of_interest()
+            logger.info('Processing station ' + station.name + ' finished.')
 
 
 class Station:
