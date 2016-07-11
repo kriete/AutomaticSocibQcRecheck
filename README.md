@@ -22,6 +22,25 @@ The program creates one HTML file for each station and processes the variables A
 
 !Please note that this repo has no setup! Entry point is the ProcessingManager.py!
 
+#Latest Changes
+Improved configuration to set desired year and month.
+
+Added configuration to process only single stations (if desired).
+
+Removed hard-coded paths.
+
+Output directory must now be specified in the config.ini.
+
+Prevented opening of new tabs in browser after processing a weather station.
+
+Added possibility to use webgl for plotting (significantly faster rendering, but with some small visual "problems").
+
+Removed toolbar from plots to prevent documented bug (11.07.) because of visual styling.
+
+Added some configuration loading functions.
+
+Tested with newest bokeh version (0.12).
+
 #Screenshot of interactive html output
 ![...](/img/overview.png?raw=true "HTML bokeh output")
 ![...](/img/zoomed.png?raw=true "HTML bokeh output")
