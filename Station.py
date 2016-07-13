@@ -37,7 +37,7 @@ class StationManager:
                 logger.info('Found data for station ' + name)
                 self.station_container.append(Station(link, name, self.year, self.month))
             else:
-                logger.warning(link + ' does not exist. Will not use this station.')
+                logger.info(link + ' does not exist. Will not use this station.')
 
     def assign_qc_processes(self):
         # TODO: also get dat stuff from database goddamn it
@@ -151,6 +151,7 @@ class Station:
 
     def perform_qc(self):
         for variable_name in self.variables_of_interest:
+            logger.info('Processing ' + variable_name)
             variable = self.root[variable_name]
             variable_data = get_data_array(variable)
             self.qc_output[variable_name] = np.ones((1, len(variable_data)))[0]

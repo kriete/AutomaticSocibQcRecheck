@@ -43,6 +43,7 @@ def merge_arrays(invalid_idx, qc_flag, cur_qc_array):
 
 
 def compute_valid_range(data, valid_min, valid_max, qc_flag, cur_qc_array):
+    logger.info('Applying Range check...')
     invalid_less = np.less(data, valid_min)
     invalid_greater = np.greater(data, valid_max)
     invalid_idx = np.logical_or(invalid_less, invalid_greater)
@@ -50,6 +51,7 @@ def compute_valid_range(data, valid_min, valid_max, qc_flag, cur_qc_array):
 
 
 def compute_stationary(data, cur_time, time_check_window, threshold, qc_flag, cur_qc_array):
+    logger.info('Applying Stationary check...')
     time_interval = cur_time[1] - cur_time[0]
     slicer = float(time_check_window) / time_interval*3600.
     slicer = int(slicer)
@@ -85,6 +87,7 @@ def compute_simple_gradient(data, threshold, qc_flag, cur_qc_array):
 
 
 def compute_extended_gradient(data, cur_time, threshold, time_check_window, qc_flag, cur_qc_array):
+    logger.info('Applying Gradient check...')
     invalid_idx = np.zeros((1, len(data)))[0]
     time_interval = cur_time[1] - cur_time[0]
     divide = time_check_window / float(time_interval)
@@ -97,7 +100,7 @@ def compute_extended_gradient(data, cur_time, threshold, time_check_window, qc_f
     c1 = cur_time[0]
     v2 = np.mean(data[1:1 + steps])
     c2 = np.mean(cur_time[1:1 + steps])
-    check_value = abs((v1 - v2) / (c1 - c2))
+    check_value = abs((v1 - v2) / ((c1 - c2) / 60.))
     if check_value >= threshold:
         invalid_idx[0] = True
     # initial case end
@@ -114,63 +117,85 @@ def compute_extended_gradient(data, cur_time, threshold, time_check_window, qc_f
     run_through_interval = np.delete(run_through_interval, del_index_list)
 
     # intermediate case
-    for i in run_through_interval[1:]:
-        # change AK XXX 19.10.2015
-        # if range(i-steps, i) in nan_list or range(i+1, i+steps+1) in nan_list or i in nan_list:
-        #     logger.debug("nan value skip " + str(i))
-        #     continue
-        # ignore my_list entries (22.10.2015)
-        """
-        Require getting of good measurements before / after
-        """
-        #temp_ignore_list = np.full(len(cur_time), 1, dtype=np.int)
-        #good_measurements_time_before, good_measurements_values_before = \
-        #    self.get_good_measurement_before(var_name, temp_ignore_list, range(i - steps, i), 0)
-        #good_measurements_time_after, good_measurements_values_after = \
-        #    self.get_good_measurement_before(var_name, temp_ignore_list, range(i + 1, i + steps + 1), 1)
-
-        # if there are no more good measurements after, break the for loop
-        #if len(good_measurements_values_after) == 0:
-            # my_list[i] = flag
-        #    break
-
-        # c1 = np.mean(float(var[i-steps:i]))
-        # c1 = np.mean(float(np.array(good_measurements_time_before)))
-        # c1 = np.mean(float(np.array(data[i-steps:i])))
-        c1 = np.mean(float(np.array(cur_time[i-steps:i])))
+    for i in run_through_interval:
+        idx_before = range(i-steps, i)
+        idx_before = get_good_measurement(invalid_idx, cur_qc_array, idx_before, 'before')
+        idx_after = range(i+1, i+steps+1)
+        idx_after = get_good_measurement(invalid_idx, cur_qc_array, idx_after, 'after')
+        if (len(idx_before) == 0) or (len(idx_after) == 0):
+            continue
+        c1 = np.mean(float(np.array(cur_time[idx_before])))
         c2 = float(cur_time[i])
-        # c3 = np.mean(float(self.time[i+1:i+steps+1]))
-        #c3 = np.mean(float(np.array(good_measurements_time_after)))
-        #c3 = np.mean(float(np.array(data[i+1:i+steps+1])))
-        c3 = np.mean(float(np.array(cur_time[i+1:i+steps+1])))
+        c3 = np.mean(float(np.array(cur_time[idx_after])))
 
         w1 = (c1 - c2) / (c1 - c3)
-
-        # w1 = c3 / c2
         w2 = (c2 - c3) / (c1 - c3)
-        # w2 = c1 / c2
 
-        # v1 = np.mean(var[i-steps:i])
-        #v1 = np.mean(np.array(good_measurements_values_before))
-        v1 = np.mean(data[i-steps:i])
-        #v2 = var[i]
+        v1 = np.mean(data[idx_before])
         v2 = data[i]
-        # v3 = np.mean(var[i+1:i+steps+1])
-        #v3 = np.mean(np.array(good_measurements_values_after))
-        v3 = np.mean(data[i+1:i+steps+1])
+        v3 = np.mean(data[idx_after])
 
         check_value = abs(w1 * (v2 - v3) / ((c2 - c3) / 60) + w2 * (v1 - v2) / ((c1 - c2) / 60))
-        # change AK XXX 15.10.2015
-        # check_value = abs(w1 * (v2 - v3)/c1 + w2 * (v1 - v2)/c3)
         if round(check_value, 10) >= threshold:
             invalid_idx[i] = True
+            logger.debug('Gradient found: V2:' + str(v2) + ' V1: ' + str(v1) + ' V3: ' + str(v3) + '. Check value: ' + str(check_value) + ' (valid threshold: ' + str(threshold) + ').')
     return merge_arrays(invalid_idx, qc_flag, cur_qc_array)
 
 
+def get_good_measurement(logical_array, cur_qc_array, desired_idx, find_type):
+    # TODO: run only over good measurements at the qc_logical shitstuff, but don't forget to fix indices afterwards..!
+    # Might improve the efficiency
+    out_idx = []
+    for cur_des_idx in desired_idx:
+        if (not logical_array[cur_des_idx]) and (cur_qc_array[cur_des_idx] == 1) \
+                and (cur_des_idx not in out_idx):
+            out_idx.append(cur_des_idx)
+            # copy_of_logical_array[cur_des_idx] = True
+        else:
+            if find_type == 'before':
+                full_qc_logical = np.logical_and(np.logical_not(logical_array[0:cur_des_idx]), (cur_qc_array[0:cur_des_idx]==1))
+                reversed_qc_logical = np.fliplr([full_qc_logical])[0]
+                if np.all(~reversed_qc_logical):
+                    continue
+                for i, value in np.ndenumerate(reversed_qc_logical):
+                    new_idx = cur_des_idx-i[0]-1
+                    if value and (new_idx not in out_idx):
+                        out_idx.append(new_idx)
+                        break
+            elif find_type == 'after':
+                full_qc_logical = np.logical_and(np.logical_not(logical_array[cur_des_idx::]), (cur_qc_array[cur_des_idx::]==1))
+                # full_qc_array = merge_arrays(logical_array[cur_des_idx::], 9, cur_qc_array[cur_des_idx::])
+                # full_qc_logical = (full_qc_array == 1)
+                for i, value in np.ndenumerate(full_qc_logical):
+                    new_idx = cur_des_idx+i[0]
+                    if value and (new_idx not in out_idx):
+                        out_idx.append(new_idx)
+                        break
+            else:
+                logger.warning('Find type for finding good measurement not found.')
+    return out_idx
+
+
 def compute_spike(data, threshold, qc_flag, cur_qc_array):
+    logger.info('Applying Spike check...')
     invalid_idx = np.zeros((1, len(data)))[0]
-    for i in range(1, len(data)-1):
-        check_value = abs(data[i] - (data[i+1] + data[i-1]) / 2.) - abs((data[i+1] - data[i-1]) / 2.)
+
+    nan_list = np.where(np.isnan(data))[0]
+    run_through_interval = np.array(range(1, len(data) - 1, 1))
+
+    del_index_list = []
+    for n in nan_list:
+        if 0 < n < len(data):
+            del_index_list.append(n - 1)
+
+    del_index_list = np.unique(del_index_list)
+    run_through_interval = np.delete(run_through_interval, del_index_list)
+
+    for i in run_through_interval:
+        idx_before = get_good_measurement(invalid_idx, cur_qc_array, [i-1], 'before')
+        idx_after = get_good_measurement(invalid_idx, cur_qc_array, [i+1], 'after')
+        # check_value = abs(data[i] - (data[i+1] + data[i-1]) / 2.) - abs((data[i+1] - data[i-1]) / 2.)
+        check_value = abs(data[i] - (data[idx_after] + data[idx_before]) / 2.) - abs((data[idx_after] - data[idx_before]) / 2.)
         if check_value > threshold:
             invalid_idx[i] = True
     return merge_arrays(invalid_idx, qc_flag, cur_qc_array)
