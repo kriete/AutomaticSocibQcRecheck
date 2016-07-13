@@ -1,3 +1,6 @@
+[13.07.2016]
+Added usage of good data only for gradient and spike checks.
+Enhanced logging outputs.
 [11.07.2016]
 Improved configuration to set desired year and month.
 Added configuration to process only single stations (if desired).
